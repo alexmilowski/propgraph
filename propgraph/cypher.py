@@ -5,7 +5,8 @@ def cypher_literal(v):
    else:
       return str(v)
 
-def cypher_update(graph,output,typemap={},**kwargs):
+def cypher_update(graph,output_handler,typemap={},**kwargs):
+   output,output_id = output_handler.start();
    for position,scope in enumerate(graph if type(graph)==list else [graph]):
       for label in scope:
          if label=='@edges':
@@ -58,3 +59,5 @@ def cypher_update(graph,output,typemap={},**kwargs):
             pcount += 1
          output.write('}}]->(`n{target}`)'.format(target=edge['@target']))
       output.write(';')
+
+   output_handler.end(output_id);

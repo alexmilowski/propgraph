@@ -93,11 +93,20 @@ def type_subject(output,subjects,ids,subject,subject_type,use_blank=False,type_p
    triple(output,subject,type_predicate,subject_type,value_type=type_type)
 
 
-def nquad_update(graph,output,typemap={},base='',subjects={},vocab='',use_blank=False,duplicates=False,type_predicate='rdf:type',**kwargs):
+def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',use_blank=False,duplicates=False,type_predicate='rdf:type',partition_size=-1,**kwargs):
+
 
    ids = blank_id();
 
+   triple_count = 0;
+
+   output, output_id = output_handler.start()
+
    for position,scope in enumerate(graph if type(graph)==list else [graph]):
+
+      if output is None:
+         output, output_id = output_handler.start()
+
       for label in scope:
          if label=='@edges':
             continue
@@ -110,6 +119,7 @@ def nquad_update(graph,output,typemap={},base='',subjects={},vocab='',use_blank=
 
          if xid is not None:
             triple(output,subject,'xid',xid)
+            triple_count += 1
 
          types = node['@type']
          if type(types)!=list:
@@ -117,6 +127,7 @@ def nquad_update(graph,output,typemap={},base='',subjects={},vocab='',use_blank=
 
          for ntype in types:
             type_subject(output,subjects,ids,subject,vocab + ntype,use_blank=use_blank,type_predicate=type_predicate)
+            triple_count += 1
 
          for pname in node:
             if pname=='@type':
@@ -126,6 +137,7 @@ def nquad_update(graph,output,typemap={},base='',subjects={},vocab='',use_blank=
             if pspec is not None:
                ptype = pspec.get('type')
             triple(output,subject,vocab + pname,node[pname],value_type=ptype)
+            triple_count += 1
 
       for edge in scope['@edges']:
          etypes = edge['@type']
@@ -140,3 +152,12 @@ def nquad_update(graph,output,typemap={},base='',subjects={},vocab='',use_blank=
             target = node_subject(subjects,ids,scope[edge['@target']],typemap,base,use_blank)
             for etype in etypes:
                triple(output,source[0],vocab + etype,target[0],value_type='blank')
+               triple_count += 1
+
+      if partition_size > 0 and triple_count>partition_size:
+         output_handler.end(output_id,subjects=subjects)
+         triple_count = 0
+         output = None
+
+   if output is not None:
+      output_handler.end(output_id,subjects=subjects)

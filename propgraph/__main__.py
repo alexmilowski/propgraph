@@ -11,6 +11,7 @@ parser.add_argument('-b','--base',help='A default base URI')
 parser.add_argument('-v','--vocab',help='A default vocabulary URI')
 parser.add_argument('-t','--typemap',help='Type to property map')
 parser.add_argument('-s','--subjects',help='A subject id mapping')
+parser.add_argument('--partition-size',type=int,default=-1,help='The partition size for the update')
 parser.add_argument('--use-blank',help='Type to property map',action='store_true',default=False)
 parser.add_argument('--duplicates',help='Allow duplicate properties',action='store_true',default=False)
 parser.add_argument('-f','--format',choices=['cypher','nquad','dgraph'],default='cypher')
@@ -18,10 +19,25 @@ parser.add_argument('--type-predicate',help='Type predicate for typing nodes/edg
 
 args = parser.parse_args()
 
-def dgraph_update(graph,output,**kwargs):
-   output.write('{\nset {\n')
-   nquad_update(graph,output,**kwargs)
-   output.write('}\n}\n')
+def dgraph_update(graph,output_handler,**kwargs):
+   class OutputWrapper:
+      def __init__(self):
+         self.outputs = {}
+
+      def start(self):
+         output, output_id = output_handler.start()
+         self.outputs[output_id] = output
+         output.write('{\nset {\n')
+         return (output,output_id)
+
+      def end(self,output_id,**kwargs):
+         output = self.outputs[output_id]
+         if output is None:
+            raise ValueError('Output id {} is not defined.'.format(output_id))
+         output.write('}\n}\n')
+         output_handler.end(output_id,**kwargs)
+
+   nquad_update(graph,OutputWrapper(),**kwargs)
 
 format_update = {
    'cypher' : cypher_update,
@@ -31,10 +47,18 @@ format_update = {
 
 update = format_update.get(args.format)
 
-out = sys.stdout
 
-if args.output is not None:
-   out = open(args.output,'w')
+class OutputHandler:
+   def start(self):
+      self.out = sys.stdout
+
+      if args.output is not None:
+         self.out = open(args.output,'w')
+      return (self.out,1)
+
+   def end(self,output_id,**kwargs):
+      if args.output is not None:
+         self.out.close()
 
 options = {}
 
@@ -57,6 +81,7 @@ if args.subjects is not None:
 
 options['use_blank'] = args.use_blank
 options['duplicates'] = args.duplicates
+options['partition_size'] = args.partition_size
 
 for filename in args.files:
    if filename=='-':
@@ -69,4 +94,4 @@ for filename in args.files:
    if filename!='-':
       rawjson.close()
 
-   update(graph,out,**options)
+   update(graph,OutputHandler(),**options)
