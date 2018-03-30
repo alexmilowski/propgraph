@@ -42,7 +42,7 @@ def triple(output,subject,predicate,value,value_type=None):
          output.write('>')
    output.write(' .\n')
 
-def node_subject(subjects,ids,node,typemap,base,use_blank):
+def node_subject(subjects,ids,node,typemap,base,use_blank,blanks):
 
    types = node['@type']
    if type(types)!=list:
@@ -62,12 +62,18 @@ def node_subject(subjects,ids,node,typemap,base,use_blank):
 
    key_exists = key_value in subjects if key_value is not None else False
    subject = subjects.get(key_value) if key_value is not None else None
+   if subject is not None:
+      mapped_subject = subjects.get(subject)
+      if mapped_subject is not None:
+         subject = mapped_subject
+
    xid = None
    if subject is None and key_value is not None:
       subject = base + str(key_value)
       if use_blank:
          xid = subject
          subject = next(ids)
+         blanks[subject] = key_value
    elif subject is not None and key_value is not None:
       xid = base + str(key_value)
 
@@ -78,13 +84,18 @@ def node_subject(subjects,ids,node,typemap,base,use_blank):
 
    return (subject,xid,key_exists)
 
-def type_subject(output,subjects,ids,subject,subject_type,use_blank=False,type_predicate='rdf:type',**kwargs):
+def type_subject(output,subjects,ids,subject,subject_type,use_blank=False,blanks={},type_predicate='rdf:type',**kwargs):
    type_type = 'xs:anyURI'
    if use_blank:
       type_xid = subject_type
       subject_type = subjects.get(type_xid)
+      if subject_type is not None:
+         mapped_subject_type = subjects.get(subject_type)
+         if mapped_subject_type is not None:
+            subject_type = mapped_subject_type
       if subject_type is None:
          subject_type = next(ids)
+         blanks[subject_type] = type_xid
          type_type = 'blank'
          subjects[type_xid] = subject_type
          triple(output,subject_type,'xid',type_xid)
@@ -93,10 +104,12 @@ def type_subject(output,subjects,ids,subject,subject_type,use_blank=False,type_p
    triple(output,subject,type_predicate,subject_type,value_type=type_type)
 
 
-def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',use_blank=False,duplicates=False,type_predicate='rdf:type',partition_size=-1,**kwargs):
+def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',use_blank=False,blanks={},duplicates=False,type_predicate='rdf:type',partition_size=-1,**kwargs):
 
 
    ids = blank_id();
+
+   total_count = 0
 
    triple_count = 0;
 
@@ -112,7 +125,7 @@ def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',us
             continue
          node = scope[label]
 
-         subject, xid, exists = node_subject(subjects,ids,node,typemap,base,use_blank)
+         subject, xid, exists = node_subject(subjects,ids,node,typemap,base,use_blank,blanks)
 
          if not duplicates and exists:
             continue
@@ -126,7 +139,7 @@ def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',us
             types = [types]
 
          for ntype in types:
-            type_subject(output,subjects,ids,subject,vocab + ntype,use_blank=use_blank,type_predicate=type_predicate)
+            type_subject(output,subjects,ids,subject,vocab + ntype,use_blank=use_blank,blanks=blanks,type_predicate=type_predicate)
             triple_count += 1
 
          for pname in node:
@@ -148,16 +161,20 @@ def nquad_update(graph,output_handler,typemap={},base='',subjects={},vocab='',us
          if len(pnames)>0:
             raise ValueError('Edges with properties not supported')
          else:
-            source = node_subject(subjects,ids,scope[edge['@source']],typemap,base,use_blank)
-            target = node_subject(subjects,ids,scope[edge['@target']],typemap,base,use_blank)
+            source = node_subject(subjects,ids,scope[edge['@source']],typemap,base,use_blank,blanks)
+            target = node_subject(subjects,ids,scope[edge['@target']],typemap,base,use_blank,blanks)
             for etype in etypes:
-               triple(output,source[0],vocab + etype,target[0],value_type='blank')
+               triple(output,source[0],vocab + etype,target[0],value_type='xs:anyURI')
                triple_count += 1
 
       if partition_size > 0 and triple_count>partition_size:
          output_handler.end(output_id,subjects=subjects)
+         total_count += triple_count
          triple_count = 0
          output = None
 
    if output is not None:
       output_handler.end(output_id,subjects=subjects)
+
+   total_count += triple_count
+   return total_count
